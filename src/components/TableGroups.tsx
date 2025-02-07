@@ -30,12 +30,15 @@ interface GroupData {
 
 export const TableGroups: React.FC = () => {
   const [groups, setGroups] = useState<GroupData[]>([
-    { id: 1, columns: defaultColumns }
+    { id: 1, columns: defaultColumns.map(col => ({ ...col })) }
   ]);
   const [columnWidths, setColumnWidths] = useState<ColumnWidth[]>([]);
+  const [lastApplyToAll, setLastApplyToAll] = useState(false);
 
   const addGroup = () => {
-    setGroups([...groups, { id: Date.now(), columns: defaultColumns }]);
+    // Create a fresh copy of columns without any width property
+    const freshColumns = defaultColumns.map(({ width, ...rest }) => rest);
+    setGroups([...groups, { id: Date.now(), columns: freshColumns }]);
   };
 
   const updateSharedWidth = (width: number, isAdding: boolean) => {
