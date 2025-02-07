@@ -78,8 +78,32 @@ export const TableGroups: React.FC = () => {
 
       const accessorKey = column.accessorKey;
 
+      // Always remove the old width of the current column from shared widths
+      if (column.width !== undefined) {
+        updateSharedWidth(column.width, false);
+      }
+
       if (applyToAll) {
-        // Update all groups' columns with the same accessorKey
+        // Get all columns with the same accessorKey across all groups
+        const affectedColumns = newGroups.flatMap(g => 
+          g.columns.filter(col => col.accessorKey === accessorKey)
+        );
+
+        // Remove old widths from all affected columns
+        affectedColumns.forEach(col => {
+          if (col.width !== undefined && col.id !== columnId) { // Skip current column as it's already handled
+            updateSharedWidth(col.width, false);
+          }
+        });
+
+        // Add new width for each affected column
+        if (width !== undefined) {
+          affectedColumns.forEach(() => {
+            updateSharedWidth(width, true);
+          });
+        }
+
+        // Update all matching columns with the new width
         return newGroups.map(g => ({
           ...g,
           columns: g.columns.map(col => 
@@ -89,7 +113,13 @@ export const TableGroups: React.FC = () => {
           )
         }));
       } else {
-        // Update only the specific column in the specific group
+        // Single column update
+        // Add new width to shared widths if it exists
+        if (width !== undefined) {
+          updateSharedWidth(width, true);
+        }
+
+        // Update only the specific column
         return newGroups.map(g => 
           g.id === groupId
             ? {

@@ -32,6 +32,21 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
     top: number;
     left: number;
   }>({ top: 0, left: 0 });
+  const lastAppliedWidth = useRef<number | undefined>(width);
+  const isResizing = useRef(false);
+
+  // Persist the checkbox state in localStorage
+  useEffect(() => {
+    const savedState = localStorage.getItem(`columnApplyAll_${accessorKey}`);
+    if (savedState !== null) {
+      setApplyToAll(savedState === 'true');
+    }
+  }, [accessorKey]);
+
+  // Save checkbox state when it changes
+  useEffect(() => {
+    localStorage.setItem(`columnApplyAll_${accessorKey}`, applyToAll.toString());
+  }, [applyToAll, accessorKey]);
 
   const [{ isDragging }, drag] = useDrag({
     type: "COLUMN",
@@ -75,19 +90,50 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    setTempWidth(width !== undefined ? Math.round(width).toString() : "Auto");
+    if (!isResizing.current) {
+      setTempWidth(width !== undefined ? Math.round(width).toString() : "Auto");
+      lastAppliedWidth.current = width;
+    }
   }, [width]);
 
   const handleConfirm = () => {
+    let newWidth: number | undefined;
+    
     if (tempWidth === "Auto") {
-      setColumnWidth(columnId, undefined, applyToAll);
+      newWidth = undefined;
     } else {
-      const newWidth = Number(tempWidth);
-      if (!isNaN(newWidth)) {
-        setColumnWidth(columnId, newWidth, applyToAll);
+      const parsedWidth = Number(tempWidth);
+      if (!isNaN(parsedWidth)) {
+        newWidth = parsedWidth;
+      } else {
+        return; // Invalid width, don't proceed
       }
     }
+
+    // Always use the new width (or current width if not changed) when applying
+    const widthToApply = newWidth ?? width;
+    setColumnWidth(columnId, widthToApply, applyToAll);
+    lastAppliedWidth.current = widthToApply;
     setIsOpen(false);
+  };
+
+  const handleResize = useCallback((newWidth: number) => {
+    isResizing.current = true;
+    const roundedWidth = Math.round(newWidth);
+    
+    if (roundedWidth !== lastAppliedWidth.current) {
+      // During resize, always apply with current applyToAll setting
+      setColumnWidth(columnId, roundedWidth, applyToAll);
+      lastAppliedWidth.current = roundedWidth;
+      // Update the temp width to match the current width
+      setTempWidth(roundedWidth.toString());
+    }
+  }, [columnId, setColumnWidth, applyToAll]);
+
+  // Handle checkbox change
+  const handleApplyToAllChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newApplyToAll = e.target.checked;
+    setApplyToAll(newApplyToAll);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +147,15 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
       }
     }
   };
+
+  // Reset isResizing when mouse is released
+  useEffect(() => {
+    const handleMouseUp = () => {
+      isResizing.current = false;
+    };
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, []);
 
   const renderPopover = () => {
     if (!isOpen) return null;
@@ -160,7 +215,7 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
             <input
               type="checkbox"
               checked={applyToAll}
-              onChange={(e) => setApplyToAll(e.target.checked)}
+              onChange={handleApplyToAllChange}
             />
             Apply to all "{accessorKey}" columns
           </label>
@@ -169,6 +224,30 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
       document.body
     );
   };
+
+  const renderResizer = () => (
+    <div
+      style={{
+        position: "absolute",
+        right: "0",
+        top: 0,
+        height: "100%",
+        width: "4px",
+        cursor: "col-resize",
+        userSelect: "none",
+        touchAction: "none",
+        background: "rgba(0, 0, 0, 0.2)",
+        transition: "background-color 0.2s",
+        zIndex: 1
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.2)";
+      }}
+    />
+  );
 
   return (
     <>
@@ -213,6 +292,7 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
         >
           {width || "Auto"}
         </button>
+        {renderResizer()}
       </div>
       {renderPopover()}
     </>

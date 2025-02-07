@@ -64,6 +64,9 @@ export const TableGroup: React.FC<TableGroupProps> = ({
   const tableRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [columnResizeMode] = useState<ColumnResizeMode>("onChange");
+  const [lastApplyToAll, setLastApplyToAll] = useState<{ [key: string]: boolean }>({});
+
+  const RESIZER_WIDTH = 4; // Width of the resizer handle
 
   // Update local columns when props change
   useEffect(() => {
@@ -138,22 +141,46 @@ export const TableGroup: React.FC<TableGroupProps> = ({
 
   const setColumnWidth = (columnId: string, width: number | undefined, applyToAll?: boolean) => {
     const oldColumn = columns.find((col) => col.id === columnId);
+    if (!oldColumn) return;
 
-    // Only update if the width has actually changed
-    if (oldColumn?.width !== width) {
-      // Remove the old width from shared widths if it exists
-      if (oldColumn?.width !== undefined) {
+    const updatedColumns = [...columns];
+    
+    if (applyToAll) {
+      // Find all columns with the same accessorKey
+      updatedColumns.forEach(col => {
+        if (col.accessorKey === oldColumn.accessorKey) {
+          // Remove old width from shared widths if it exists
+          if (col.width !== undefined) {
+            onWidthChange(col.width, false);
+          }
+          // Add new width to shared widths if it exists
+          if (width !== undefined) {
+            onWidthChange(width, true);
+          }
+          col.width = width;
+        }
+      });
+      // Notify parent about the width change with applyToAll flag
+      onColumnUpdate(columnId, width, true);
+    } else {
+      // Single column update
+      const columnIndex = updatedColumns.findIndex(col => col.id === columnId);
+      if (columnIndex === -1) return;
+
+      // Remove old width from shared widths if it exists
+      if (oldColumn.width !== undefined) {
         onWidthChange(oldColumn.width, false);
       }
-
-      // Add the new width to shared widths if it exists
+      // Add new width to shared widths if it exists
       if (width !== undefined) {
         onWidthChange(width, true);
       }
-
-      // Notify parent component about the width change
-      onColumnUpdate(columnId, width, applyToAll);
+      updatedColumns[columnIndex].width = width;
+      // Notify parent about the width change without applyToAll flag
+      onColumnUpdate(columnId, width, false);
     }
+
+    setColumns(updatedColumns);
   };
 
   const handleColumnResize = useCallback((columnId: string, newWidth: number) => {
@@ -161,54 +188,36 @@ export const TableGroup: React.FC<TableGroupProps> = ({
   }, [setColumnWidth]);
 
   const calculateColumnWidths = useMemo(() => {
-    // Calculate total width of fixed columns
-    const fixedWidthSum = columns.reduce((sum, col) => 
-      sum + (col.width !== undefined ? col.width : 0), 0);
+    // Calculate total fixed width and count auto columns
+    const totalFixedWidth = columns.reduce((sum, col) => 
+      col.width ? sum + col.width : sum, 0) + (columns.length - 1) * RESIZER_WIDTH;
+    const autoColumns = columns.filter(col => !col.width);
     
-    // Count flexible columns (Auto)
-    const flexibleColumns = columns.filter(col => col.width === undefined);
-    const flexibleCount = flexibleColumns.length;
-    
-    // Determine if we should show horizontal scroll
-    const hasHorizontalScroll = flexibleCount === 0 && fixedWidthSum > containerWidth;
-    
-    let calculatedColumns;
-    if (flexibleCount > 0) {
-      // If we have any Auto columns, calculate their width based on remaining space
-      const remainingWidth = Math.max(0, containerWidth - fixedWidthSum);
-      // Use Math.ceil to prevent rounding down issues
-      const flexibleWidth = Math.ceil(remainingWidth / flexibleCount);
-      
-      calculatedColumns = columns.map(col => ({
-        ...col,
-        calculatedWidth: col.width !== undefined ? col.width : flexibleWidth,
-      }));
-    } else {
-      calculatedColumns = columns.map(col => ({
-        ...col,
-        calculatedWidth: col.width!,
-      }));
+    // If all columns have fixed widths, use their total width
+    if (autoColumns.length === 0) {
+      return {
+        columns: columns.map(col => ({
+          ...col,
+          calculatedWidth: col.width || 0
+        })),
+        totalWidth: totalFixedWidth,
+        hasAutoColumns: false
+      };
     }
 
-    // Calculate total width
-    const totalWidth = flexibleCount > 0 ? containerWidth : fixedWidthSum;
+    // If we have auto columns, distribute remaining space
+    const remainingWidth = Math.max(0, containerWidth - totalFixedWidth);
+    const autoColumnWidth = remainingWidth / autoColumns.length;
 
     return {
-      columns: calculatedColumns,
-      totalWidth,
-      hasHorizontalScroll,
-      flexibleCount
+      columns: columns.map(col => ({
+        ...col,
+        calculatedWidth: col.width || autoColumnWidth
+      })),
+      totalWidth: containerWidth,
+      hasAutoColumns: true
     };
   }, [columns, containerWidth]);
-
-  const tableStyle = useMemo(() => ({
-    width: "100%",
-    minWidth: calculateColumnWidths.flexibleCount > 0 ? "100%" : `${calculateColumnWidths.totalWidth}px`,
-    maxWidth: calculateColumnWidths.flexibleCount > 0 ? "100%" : "none",
-    tableLayout: "fixed" as const,
-    borderSpacing: 0,
-    borderCollapse: "collapse" as const
-  }), [calculateColumnWidths]);
 
   const tableColumns: ColumnDef<any>[] = useMemo(
     () =>
@@ -227,8 +236,17 @@ export const TableGroup: React.FC<TableGroupProps> = ({
         ),
         accessorKey: col.accessorKey,
         size: col.calculatedWidth,
-        minSize: 0,
-        maxSize: col.width !== undefined ? col.width : undefined,
+        minSize: col.width || 0,
+        maxSize: col.width,
+        meta: {
+          style: {
+            width: col.width ? `${col.width}px` : undefined,
+            minWidth: col.width ? `${col.width}px` : undefined,
+            maxWidth: col.width ? `${col.width}px` : undefined,
+            position: 'relative',
+            paddingRight: `${RESIZER_WIDTH}px`
+          }
+        }
       })),
     [calculateColumnWidths, moveColumn, setColumnWidth, columns]
   );
@@ -269,39 +287,38 @@ export const TableGroup: React.FC<TableGroupProps> = ({
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="table-group">
-        <h2 className="group-title">Group {groupId}</h2>
-        <button onClick={addColumn} className="add-button">
-          Add Column
-        </button>
-        <button onClick={addRow} className="add-button">
-          Add Row
-        </button>
-        <div
-          ref={tableRef}
-          className="table-container"
-          style={{
-            position: "relative",
-            overflowX: calculateColumnWidths.hasHorizontalScroll ? "auto" : "hidden",
-            width: "100%"
-          }}
-        >
-          <table style={tableStyle}>
-            <thead>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => {
-                    const width = header.getSize();
-                    const hasMatchingWidth = columns.some(
-                      (col) =>
-                        col.id !== header.column.id && col.width === width
-                    );
-
-                    return (
+      <div className="table-group" ref={tableRef}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          marginBottom: '1rem' 
+        }}>
+          <button onClick={addColumn}>Add Column</button>
+          <button onClick={addRow}>Add Row</button>
+        </div>
+        <div style={{
+          width: '100%',
+          overflowX: 'auto'
+        }}>
+          <div style={{
+            width: calculateColumnWidths.hasAutoColumns ? '100%' : 'fit-content',
+            maxWidth: '100%'
+          }}>
+            <table style={{
+              width: calculateColumnWidths.hasAutoColumns ? '100%' : 'fit-content',
+              minWidth: 'fit-content',
+              tableLayout: "fixed" as const,
+              borderSpacing: 0,
+              borderCollapse: "collapse" as const
+            }}>
+              <thead>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
                         style={{
-                          width: `${width}px`,
+                          width: `${header.getSize()}px`,
                           position: "relative",
                         }}
                       >
@@ -317,7 +334,7 @@ export const TableGroup: React.FC<TableGroupProps> = ({
                             onTouchStart={header.getResizeHandler()}
                             className={`resizer ${
                               header.column.getIsResizing() ? "isResizing" : ""
-                            } ${hasMatchingWidth ? "matching" : ""}`}
+                            }`}
                             style={{
                               position: "absolute",
                               right: "-2px",
@@ -333,29 +350,29 @@ export const TableGroup: React.FC<TableGroupProps> = ({
                           />
                         </div>
                       </th>
-                    );
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      style={{ width: `${cell.column.getSize()}px` }}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        style={{ width: `${cell.column.getSize()}px` }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </DndProvider>
