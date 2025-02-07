@@ -10,8 +10,9 @@ interface DraggableColumnHeaderProps {
   index: number;
   moveColumn: (dragIndex: number, hoverIndex: number) => void;
   columnId: string;
-  setColumnWidth: (columnId: string, width: number | undefined) => void;
+  setColumnWidth: (columnId: string, width: number | undefined, applyToAll?: boolean) => void;
   width?: number;
+  accessorKey: string;
 }
 
 export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
@@ -21,9 +22,11 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
   columnId,
   setColumnWidth,
   width,
+  accessorKey,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tempWidth, setTempWidth] = useState<string>(width?.toString() || "Auto");
+  const [applyToAll, setApplyToAll] = useState(false);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{
     top: number;
@@ -77,11 +80,11 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
 
   const handleConfirm = () => {
     if (tempWidth === "Auto") {
-      setColumnWidth(columnId, undefined);
+      setColumnWidth(columnId, undefined, applyToAll);
     } else {
       const newWidth = Number(tempWidth);
       if (!isNaN(newWidth)) {
-        setColumnWidth(columnId, newWidth);
+        setColumnWidth(columnId, newWidth, applyToAll);
       }
     }
     setIsOpen(false);
@@ -117,32 +120,50 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
           boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input
-            type="text"
-            value={tempWidth}
-            onChange={handleInputChange}
-            placeholder="Auto"
-            style={{ 
-              width: '60px',
-              padding: '4px',
-              border: '1px solid #ccc',
-              borderRadius: '4px'
-            }}
-          />
-          <button
-            onClick={handleConfirm}
-            style={{
-              padding: '4px 8px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Apply
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              value={tempWidth}
+              onChange={handleInputChange}
+              placeholder="Auto"
+              style={{ 
+                width: '60px',
+                padding: '4px',
+                border: '1px solid #ccc',
+                borderRadius: '4px'
+              }}
+            />
+            <button
+              onClick={handleConfirm}
+              style={{
+                padding: '4px 8px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Apply
+            </button>
+          </div>
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            fontSize: '12px',
+            color: '#666',
+            userSelect: 'none',
+            cursor: 'pointer'
+          }}>
+            <input
+              type="checkbox"
+              checked={applyToAll}
+              onChange={(e) => setApplyToAll(e.target.checked)}
+            />
+            Apply to all "{accessorKey}" columns
+          </label>
         </div>
       </div>,
       document.body
@@ -163,10 +184,20 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '4px 8px',
-          userSelect: 'none'
+          userSelect: 'none',
+          width: '100%',
+          position: 'relative'
         }}
       >
-        <span>{header}</span>
+        <div style={{ 
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          marginRight: '8px',
+          flex: '1'
+        }}>
+          {header}
+        </div>
         <button
           onClick={() => setIsOpen(!isOpen)}
           style={{
@@ -175,7 +206,9 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
             cursor: 'pointer',
             padding: '2px 4px',
             fontSize: '12px',
-            color: '#666'
+            color: '#666',
+            whiteSpace: 'nowrap',
+            minWidth: 'fit-content'
           }}
         >
           {width || "Auto"}

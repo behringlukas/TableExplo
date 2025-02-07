@@ -1,7 +1,6 @@
 "use client";
 
-import React from "react";
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import {
@@ -25,49 +24,108 @@ interface TableGroupProps {
   groupId: number;
   onWidthChange: (width: number, isAdding: boolean) => void;
   getSnapWidth: (currentWidth: number, threshold?: number) => number | null;
+  columns: Column[];
+  onColumnUpdate: (columnId: string, width: number | undefined, applyToAll?: boolean) => void;
 }
+
+const defaultData = [
+  { 
+    name: 'Task 1', 
+    description: 'Implement new feature', 
+    status: 'In Progress', 
+    priority: 'High',
+    assignee: 'John Doe'
+  },
+  { 
+    name: 'Task 2', 
+    description: 'Fix bug in login flow', 
+    status: 'Open', 
+    priority: 'Medium',
+    assignee: 'Jane Smith'
+  },
+  { 
+    name: 'Task 3', 
+    description: 'Update documentation', 
+    status: 'Done', 
+    priority: 'Low',
+    assignee: 'Bob Wilson'
+  }
+];
 
 export const TableGroup: React.FC<TableGroupProps> = ({
   groupId,
   onWidthChange,
   getSnapWidth,
+  columns: initialColumns,
+  onColumnUpdate
 }) => {
-  const [columns, setColumns] = useState<Column[]>([]);
-  const [data, setData] = useState<any[]>([]);
+  const [columns, setColumns] = useState<Column[]>(initialColumns);
+  const [data, setData] = useState<any[]>(defaultData);
   const tableRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [columnResizeMode] = useState<ColumnResizeMode>("onChange");
 
+  // Update local columns when props change
   useEffect(() => {
-    const updateContainerWidth = () => {
-      if (tableRef.current) {
-        setContainerWidth(tableRef.current.offsetWidth);
-      }
-    };
-
-    updateContainerWidth();
-    window.addEventListener("resize", updateContainerWidth);
-
-    return () => {
-      window.removeEventListener("resize", updateContainerWidth);
-    };
-  }, []);
+    setColumns(initialColumns);
+  }, [initialColumns]);
 
   const addColumn = () => {
+    const columnTypes = [
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Due Date', key: 'dueDate' },
+      { header: 'Category', key: 'category' },
+      { header: 'Tags', key: 'tags' },
+      { header: 'Comments', key: 'comments' }
+    ];
+    
+    const nextType = columnTypes[columns.length % columnTypes.length];
     const newColumn: Column = {
-      id: `col-${Date.now()}`,
-      header: `Column ${columns.length + 1}`,
-      accessorKey: `col${columns.length + 1}`,
+      id: `${nextType.key}-${Date.now()}`,
+      header: nextType.header,
+      accessorKey: nextType.key,
     };
+    
     setColumns([...columns, newColumn]);
-    setData(data.map((row) => ({ ...row, [newColumn.accessorKey]: "" })));
+    setData(data.map((row) => ({ 
+      ...row, 
+      [newColumn.accessorKey]: getDefaultValueForColumn(newColumn.accessorKey)
+    })));
+  };
+
+  const getDefaultValueForColumn = (key: string): string => {
+    const defaults: { [key: string]: () => string } = {
+      createdAt: () => new Date().toLocaleDateString(),
+      dueDate: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+      category: () => ['Bug', 'Feature', 'Enhancement', 'Documentation'][Math.floor(Math.random() * 4)],
+      tags: () => ['Frontend', 'Backend', 'UI/UX', 'API'][Math.floor(Math.random() * 4)],
+      comments: () => `${Math.floor(Math.random() * 10)} comments`
+    };
+    return defaults[key] ? defaults[key]() : '';
   };
 
   const addRow = () => {
+    const statuses = ['Open', 'In Progress', 'Done', 'Blocked'];
+    const priorities = ['High', 'Medium', 'Low'];
+    const assignees = ['John Doe', 'Jane Smith', 'Bob Wilson', 'Alice Brown'];
+    
     const newRow = columns.reduce((acc, col) => {
-      acc[col.accessorKey] = "";
+      if (col.accessorKey === 'name') {
+        acc[col.accessorKey] = `Task ${data.length + 1}`;
+      } else if (col.accessorKey === 'description') {
+        acc[col.accessorKey] = `New task description ${data.length + 1}`;
+      } else if (col.accessorKey === 'status') {
+        acc[col.accessorKey] = statuses[Math.floor(Math.random() * statuses.length)];
+      } else if (col.accessorKey === 'priority') {
+        acc[col.accessorKey] = priorities[Math.floor(Math.random() * priorities.length)];
+      } else if (col.accessorKey === 'assignee') {
+        acc[col.accessorKey] = assignees[Math.floor(Math.random() * assignees.length)];
+      } else {
+        acc[col.accessorKey] = getDefaultValueForColumn(col.accessorKey);
+      }
       return acc;
     }, {} as Record<string, string>);
+    
     setData([...data, newRow]);
   };
 
@@ -78,7 +136,7 @@ export const TableGroup: React.FC<TableGroupProps> = ({
     setColumns(newColumns);
   };
 
-  const setColumnWidth = (columnId: string, width: number | undefined) => {
+  const setColumnWidth = (columnId: string, width: number | undefined, applyToAll?: boolean) => {
     const oldColumn = columns.find((col) => col.id === columnId);
 
     // Only update if the width has actually changed
@@ -93,9 +151,8 @@ export const TableGroup: React.FC<TableGroupProps> = ({
         onWidthChange(width, true);
       }
 
-      setColumns(
-        columns.map((col) => (col.id === columnId ? { ...col, width } : col))
-      );
+      // Notify parent component about the width change
+      onColumnUpdate(columnId, width, applyToAll);
     }
   };
 
@@ -165,6 +222,7 @@ export const TableGroup: React.FC<TableGroupProps> = ({
             columnId={col.id}
             setColumnWidth={setColumnWidth}
             width={col.width}
+            accessorKey={col.accessorKey}
           />
         ),
         accessorKey: col.accessorKey,
@@ -193,6 +251,21 @@ export const TableGroup: React.FC<TableGroupProps> = ({
       }
     },
   });
+
+  useEffect(() => {
+    const updateContainerWidth = () => {
+      if (tableRef.current) {
+        setContainerWidth(tableRef.current.offsetWidth);
+      }
+    };
+
+    updateContainerWidth();
+    window.addEventListener("resize", updateContainerWidth);
+
+    return () => {
+      window.removeEventListener("resize", updateContainerWidth);
+    };
+  }, []);
 
   return (
     <DndProvider backend={HTML5Backend}>
