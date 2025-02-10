@@ -25,7 +25,8 @@ interface TableGroupProps {
   onWidthChange: (width: number, isAdding: boolean) => void;
   getSnapWidth: (currentWidth: number, threshold?: number) => number | null;
   columns: Column[];
-  onColumnUpdate: (columnId: string, width: number | undefined, applyToAll?: boolean) => void;
+  onColumnUpdate: (columnId: string, width: number | undefined) => void;
+  onColumnReorder: (dragIndex: number, hoverIndex: number) => void;
 }
 
 const defaultData = [
@@ -57,15 +58,14 @@ export const TableGroup: React.FC<TableGroupProps> = ({
   onWidthChange,
   getSnapWidth,
   columns: initialColumns,
-  onColumnUpdate
+  onColumnUpdate,
+  onColumnReorder
 }) => {
   const [columns, setColumns] = useState<Column[]>(initialColumns);
   const [data, setData] = useState<any[]>(defaultData);
   const tableRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [columnResizeMode] = useState<ColumnResizeMode>("onChange");
-  const [lastApplyToAll, setLastApplyToAll] = useState<{ [key: string]: boolean }>({});
-
   const RESIZER_WIDTH = 4; // Width of the resizer handle
 
   // Update local columns when props change
@@ -133,54 +133,11 @@ export const TableGroup: React.FC<TableGroupProps> = ({
   };
 
   const moveColumn = (dragIndex: number, hoverIndex: number) => {
-    const newColumns = [...columns];
-    const [reorderedColumn] = newColumns.splice(dragIndex, 1);
-    newColumns.splice(hoverIndex, 0, reorderedColumn);
-    setColumns(newColumns);
+    onColumnReorder(dragIndex, hoverIndex);
   };
 
-  const setColumnWidth = (columnId: string, width: number | undefined, applyToAll?: boolean) => {
-    const oldColumn = columns.find((col) => col.id === columnId);
-    if (!oldColumn) return;
-
-    const updatedColumns = [...columns];
-    
-    if (applyToAll) {
-      // Find all columns with the same accessorKey
-      updatedColumns.forEach(col => {
-        if (col.accessorKey === oldColumn.accessorKey) {
-          // Remove old width from shared widths if it exists
-          if (col.width !== undefined) {
-            onWidthChange(col.width, false);
-          }
-          // Add new width to shared widths if it exists
-          if (width !== undefined) {
-            onWidthChange(width, true);
-          }
-          col.width = width;
-        }
-      });
-      // Notify parent about the width change with applyToAll flag
-      onColumnUpdate(columnId, width, true);
-    } else {
-      // Single column update
-      const columnIndex = updatedColumns.findIndex(col => col.id === columnId);
-      if (columnIndex === -1) return;
-
-      // Remove old width from shared widths if it exists
-      if (oldColumn.width !== undefined) {
-        onWidthChange(oldColumn.width, false);
-      }
-      // Add new width to shared widths if it exists
-      if (width !== undefined) {
-        onWidthChange(width, true);
-      }
-      updatedColumns[columnIndex].width = width;
-      // Notify parent about the width change without applyToAll flag
-      onColumnUpdate(columnId, width, false);
-    }
-
-    setColumns(updatedColumns);
+  const setColumnWidth = (columnId: string, width: number | undefined) => {
+    onColumnUpdate(columnId, width);
   };
 
   const handleColumnResize = useCallback((columnId: string, newWidth: number) => {

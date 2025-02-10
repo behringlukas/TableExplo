@@ -10,7 +10,7 @@ interface DraggableColumnHeaderProps {
   index: number;
   moveColumn: (dragIndex: number, hoverIndex: number) => void;
   columnId: string;
-  setColumnWidth: (columnId: string, width: number | undefined, applyToAll?: boolean) => void;
+  setColumnWidth: (columnId: string, width: number | undefined) => void;
   width?: number;
   accessorKey: string;
 }
@@ -26,7 +26,6 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tempWidth, setTempWidth] = useState<string>(width?.toString() || "Auto");
-  const [applyToAll, setApplyToAll] = useState(false);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{
     top: number;
@@ -34,19 +33,6 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
   }>({ top: 0, left: 0 });
   const lastAppliedWidth = useRef<number | undefined>(width);
   const isResizing = useRef(false);
-
-  // Persist the checkbox state in localStorage
-  useEffect(() => {
-    const savedState = localStorage.getItem(`columnApplyAll_${accessorKey}`);
-    if (savedState !== null) {
-      setApplyToAll(savedState === 'true');
-    }
-  }, [accessorKey]);
-
-  // Save checkbox state when it changes
-  useEffect(() => {
-    localStorage.setItem(`columnApplyAll_${accessorKey}`, applyToAll.toString());
-  }, [applyToAll, accessorKey]);
 
   const [{ isDragging }, drag] = useDrag({
     type: "COLUMN",
@@ -110,10 +96,9 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
       }
     }
 
-    // Always use the new width (or current width if not changed) when applying
-    const widthToApply = newWidth ?? width;
-    setColumnWidth(columnId, widthToApply, applyToAll);
-    lastAppliedWidth.current = widthToApply;
+    // Apply the width change
+    setColumnWidth(columnId, newWidth);
+    lastAppliedWidth.current = newWidth;
     setIsOpen(false);
   };
 
@@ -122,19 +107,12 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
     const roundedWidth = Math.round(newWidth);
     
     if (roundedWidth !== lastAppliedWidth.current) {
-      // During resize, always apply with current applyToAll setting
-      setColumnWidth(columnId, roundedWidth, applyToAll);
+      setColumnWidth(columnId, roundedWidth);
       lastAppliedWidth.current = roundedWidth;
       // Update the temp width to match the current width
       setTempWidth(roundedWidth.toString());
     }
-  }, [columnId, setColumnWidth, applyToAll]);
-
-  // Handle checkbox change
-  const handleApplyToAllChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newApplyToAll = e.target.checked;
-    setApplyToAll(newApplyToAll);
-  };
+  }, [columnId, setColumnWidth]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -203,22 +181,6 @@ export const DraggableColumnHeader: React.FC<DraggableColumnHeaderProps> = ({
               Apply
             </button>
           </div>
-          <label style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px',
-            fontSize: '12px',
-            color: '#666',
-            userSelect: 'none',
-            cursor: 'pointer'
-          }}>
-            <input
-              type="checkbox"
-              checked={applyToAll}
-              onChange={handleApplyToAllChange}
-            />
-            Apply to all "{accessorKey}" columns
-          </label>
         </div>
       </div>,
       document.body
